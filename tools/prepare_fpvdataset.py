@@ -13,7 +13,7 @@ bad_segments = [("00:00","00:03"),("00:08","00:09"),("00:14","00:15"),("00:23","
                 ("02:40","02:41"),("02:44","02:45"),("02:48","02:49"),("02:51","02:52"),("02:56","02:57"),("03:00","03:01"),
                 ("03:04","03:05"),("03:08","03:09"),("03:12","03:13"),("03:16","03:17"),("03:18","03:25"),("03:35","03:36")]  # lista de cortes MM:SS
 frame_size = (64, 64)  # resolución (ancho, alto)
-use_color = True       # True = RGB, False = Grayscale
+use_color = True       # True = RGB (3 canales), False = Grayscale (1 canal)
 seq_len = 20           # 10 input + 10 output
 split_ratio = (0.8, 0.1, 0.1)  # train, val, test
 # ======================
@@ -32,12 +32,16 @@ def load_and_clean_video(video_path, bad_segments, frame_size, use_color):
         if not ret:
             break
         f = cv2.resize(f, frame_size)
-        if not use_color:
-            f = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+        if use_color:
+            f = cv2.cvtColor(f, cv2.COLOR_BGR2RGB)   # [H,W,3]
+            f = np.transpose(f, (2,0,1))            # -> [3,H,W]
+        else:
+            f = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY) # [H,W]
+            f = f[np.newaxis, :, :]                 # -> [1,H,W]
         frames.append(f)
     cap.release()
 
-    frames = np.array(frames)  # [N,H,W,C] si RGB, [N,H,W] si Gray
+    frames = np.array(frames)  # [N,C,H,W]
 
     # Máscara para descartar segmentos
     mask = np.ones(len(frames), dtype=bool)
@@ -45,13 +49,14 @@ def load_and_clean_video(video_path, bad_segments, frame_size, use_color):
         i0, i1 = int(time_to_seconds(start) * fps), int(time_to_seconds(end) * fps)
         mask[i0:i1] = False
 
-    return frames[mask]
+    return frames[mask]  # [N,C,H,W]
 
 def make_sequences(frames, seq_len):
     seqs = []
-    for i in range(len(frames) - seq_len):
-        seqs.append(frames[i:i+seq_len])
-    return np.stack(seqs)
+    for i in range(len(frames) - seq_len + 1):
+        seq = frames[i:i+seq_len]   # [T,C,H,W]
+        seqs.append(seq)
+    return np.array(seqs)  # [N,T,C,H,W]
 
 def split_and_save(seqs, output_dir, split_ratio):
     os.makedirs(output_dir, exist_ok=True)
@@ -73,9 +78,12 @@ def split_and_save(seqs, output_dir, split_ratio):
 
 if __name__ == "__main__":
     frames = load_and_clean_video(VIDEO_PATH, bad_segments, frame_size, use_color)
-    print(f"Frames limpios: {frames.shape}")
+    print(f"Frames limpios: {frames.shape}")  # [N,C,H,W]
 
     seqs = make_sequences(frames, seq_len)
-    print(f"Total secuencias: {seqs.shape}")
+    print(f"Total secuencias: {seqs.shape}") # [N,T,C,H,W]
 
     split_and_save(seqs, OUTPUT_DIR, split_ratio)
+
+
+
