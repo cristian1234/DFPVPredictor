@@ -9,6 +9,9 @@ class FPVSingleNPZ(Dataset):
         self.data = arr.astype(np.float32) / 255.0  # normalizar 0-1
         self.pre_seq_length = pre_seq_length
         self.aft_seq_length = aft_seq_length
+        # Calcular mean y std sobre todo el dataset
+        self.mean = self.data.mean()
+        self.std = self.data.std() + 1e-6  # evitar división por cero
 
     def __len__(self):
         return len(self.data)
