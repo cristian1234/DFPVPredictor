@@ -6,7 +6,7 @@ dataset_parameters = {
         'total_length': 20
     },
     'fpv': {
-        'in_shape': [10, 1, 64, 64],
+        'in_shape': [10, 3, 64, 64],
         'pre_seq_length': 10,
         'aft_seq_length': 10,
         'total_length': 20
