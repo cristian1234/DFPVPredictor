@@ -1,7 +1,6 @@
 future
 fvcore
 matplotlib
-nni
 numpy
 hickle
 packaging
