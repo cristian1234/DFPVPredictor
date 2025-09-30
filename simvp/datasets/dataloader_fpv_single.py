@@ -19,8 +19,7 @@ class FPVSingleNPZ(Dataset):
         y = clip[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
         return torch.from_numpy(x), torch.from_numpy(y)
 
-
-def load_data(data_root, batch_size=16, val_batch_size=4, num_workers=4,
+def load_data(batch_size, val_batch_size, data_root, num_workers=4,
               pre_seq_length=10, aft_seq_length=10, **kwargs):
     train_set = FPVSingleNPZ(os.path.join(data_root, 'fpv_train.npz'),
                            pre_seq_length, aft_seq_length)
