@@ -17,7 +17,7 @@ from simvp.utils import (set_seed, print_log, output_namespace, check_dir,
 try:
     import nni
     has_nni = True
-except ImportError: 
+except ImportError:
     has_nni = False
 
 
@@ -73,14 +73,26 @@ class NonDistExperiment(object):
             print_log('Throughputs of {}: {:.3f}'.format(self.args.method, fps))
 
     def _acquire_device(self):
+        # Si se pide GPU
         if self.args.use_gpu:
+            # Caso entrenamiento distribuido
             if self.args.dist:
                 self._rank, self._world_size = get_dist_info()
-                self.device = f'cuda:{self._rank}'
-                print(f'Use GPU: local rank={self._rank}')
+                self.device = f'cuda:{self._rank}' if torch.cuda.is_available() else (
+                    'mps' if torch.backends.mps.is_available() else 'cpu'
+                )
+                print(f'Use device: {self.device} (local rank={self._rank})')
             else:
-                device = torch.device('cuda:0')
-                print('Use GPU:', device)
+                # Selección automática: MPS > CUDA > CPU
+                if torch.backends.mps.is_available():
+                    device = torch.device('mps')
+                    print('Use GPU (Apple Metal):', device)
+                elif torch.cuda.is_available():
+                    device = torch.device('cuda:0')
+                    print('Use GPU (CUDA):', device)
+                else:
+                    device = torch.device('cpu')
+                    print('Fallback to CPU:', device)
         else:
             device = torch.device('cpu')
             print('Use CPU')
