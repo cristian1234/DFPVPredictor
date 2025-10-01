@@ -43,12 +43,12 @@ def metric(pred, true, mean, std, metrics=['mae', 'mse'],
 
     Args:
         pred (tensor): The prediction values of output prediction.
-        true (tensor): The prediction values of output prediction.
+        true (tensor): The ground truth values.
         mean (tensor): The mean of the preprocessed video data.
         std (tensor): The std of the preprocessed video data.
-        metric (str | list[str]): Metrics to be evaluated.
+        metrics (list[str]): Metrics to be evaluated.
         clip_range (list): Range of prediction to prevent overflow.
-        spatial_norm (bool): Weather to normalize the metric by HxW.
+        spatial_norm (bool): Whether to normalize the metric by HxW.
     Returns:
         dict: evaluation results
     """
@@ -56,7 +56,7 @@ def metric(pred, true, mean, std, metrics=['mae', 'mse'],
     true = true * std + mean
     eval_res = {}
     eval_log = ""
-    allowed_metrics = ['mae', 'mse', 'rmse', 'ssim', 'psnr',]
+    allowed_metrics = ['mae', 'mse', 'rmse', 'ssim', 'psnr']
     invalid_metrics = set(metrics) - set(allowed_metrics)
     if len(invalid_metrics) != 0:
         raise ValueError(f'metric {invalid_metrics} is not supported.')
@@ -72,12 +72,19 @@ def metric(pred, true, mean, std, metrics=['mae', 'mse'],
 
     pred = np.maximum(pred, clip_range[0])
     pred = np.minimum(pred, clip_range[1])
+
     if 'ssim' in metrics:
         ssim = 0
         for b in range(pred.shape[0]):
             for f in range(pred.shape[1]):
-                ssim += cal_ssim(pred[b, f].swapaxes(0, 2),
-                                 true[b, f].swapaxes(0, 2), multichannel=True)
+                img1 = pred[b, f].swapaxes(0, 2)  # [H,W,C]
+                img2 = true[b, f].swapaxes(0, 2)  # [H,W,C]
+
+                if img1.ndim == 3 and img1.shape[-1] in (1, 3):
+                    ssim += cal_ssim(img1, img2, data_range=1.0, channel_axis=-1)
+                else:
+                    ssim += cal_ssim(img1, img2, data_range=1.0)
+
         eval_res['ssim'] = ssim / (pred.shape[0] * pred.shape[1])
 
     if 'psnr' in metrics:
