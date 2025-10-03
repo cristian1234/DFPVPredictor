@@ -185,27 +185,39 @@ class NonDistExperiment(object):
                 stage_hook_infos.append(info)
         return '\n'.join(stage_hook_infos)
 
-    def _save(self, name=''):
+    def _save(self, name='latest'):
         checkpoint = {
             'epoch': self._epoch + 1,
             'optimizer': self.method.model_optim.state_dict(),
             'state_dict': weights_to_cpu(self.method.model.state_dict()),
-            'scheduler': self.method.scheduler.state_dict()}
-        torch.save(checkpoint, osp.join(self.checkpoints_path, name + '.pth'))
+            'scheduler': self.method.scheduler.state_dict(),
+            'config': self.config
+        }
+        torch.save(checkpoint, osp.join(self.checkpoints_path, f'{name}.pth'))
 
     def _load(self, name=''):
         filename = name if osp.isfile(name) else osp.join(self.checkpoints_path, name + '.pth')
         try:
-            checkpoint = torch.load(filename)
-        except:
+            checkpoint = torch.load(filename, map_location=self.device)
+        except Exception:
             return
-        # OrderedDict is a subclass of dict
         if not isinstance(checkpoint, dict):
-            raise RuntimeError(f'No state_dict found in checkpoint file {filename}')
-        self.method.model.load_state_dict(checkpoint['state_dict'])
+            # viejo formato: sólo state_dict
+            self.method.model.load_state_dict(checkpoint)
+            return
+
+        # nuevo formato con dict
+        sd = checkpoint.get('state_dict', None)
+        if sd is None:
+            # fallback: por si guardaron state_dict "pelado"
+            sd = {k: v for k, v in checkpoint.items() if hasattr(v, 'shape') or torch.is_tensor(v)}
+        self.method.model.load_state_dict(sd, strict=False)
+
         if checkpoint.get('epoch', None) is not None:
             self._epoch = checkpoint['epoch']
+        if 'optimizer' in checkpoint:
             self.method.model_optim.load_state_dict(checkpoint['optimizer'])
+        if 'scheduler' in checkpoint:
             self.method.scheduler.load_state_dict(checkpoint['scheduler'])
 
     def train(self):
@@ -227,6 +239,7 @@ class NonDistExperiment(object):
                 raise ValueError(f'Invalid method name {self.args.method}')
 
             self._epoch = epoch
+
             if epoch % self.args.log_step == 0:
                 cur_lr = self.method.current_lr()
                 cur_lr = sum(cur_lr) / len(cur_lr)
@@ -235,13 +248,34 @@ class NonDistExperiment(object):
 
                 print_log('Epoch: {0}, Steps: {1} | Lr: {2:.7f} | Train Loss: {3:.7f} | Vali Loss: {4:.7f}\n'.format(
                     epoch + 1, len(self.train_loader), cur_lr, loss_mean, vali_loss))
-                recorder(vali_loss, self.method.model, self.path)
-                self._save(name='latest')
+
+                # Guarda BEST si mejora
+                recorder(
+                    vali_loss, self.method.model, self.checkpoints_path,
+                    config=self.config,
+                    optimizer=self.method.model_optim,
+                    scheduler=self.method.scheduler,
+                    epoch=epoch + 1
+                )
+
+                # Guarda ALWAYS el último (y alias latest.pth)
+                recorder.save_last(
+                    self.method.model, self.checkpoints_path,
+                    config=self.config,
+                    optimizer=self.method.model_optim,
+                    scheduler=self.method.scheduler,
+                    epoch=epoch + 1
+                )
 
         if not check_dir(self.path):  # exit training when work_dir is removed
             assert False and "Exit training because work_dir is removed"
-        best_model_path = osp.join(self.path, 'checkpoint.pth')
-        self.method.model.load_state_dict(torch.load(best_model_path))
+
+        # Cargar el MEJOR para el test/final
+        best_model_path = osp.join(self.checkpoints_path, 'checkpoint_best.pth')
+        ckpt = torch.load(best_model_path, map_location=self.device)
+        sd = ckpt['state_dict'] if isinstance(ckpt, dict) and 'state_dict' in ckpt else ckpt
+        self.method.model.load_state_dict(sd)
+
         time.sleep(1)  # wait for some hooks like loggers to finish
         self.call_hook('after_run')
 
