@@ -15,6 +15,9 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, **kw
     elif dataname == 'fpv':
         from .dataloader_fpv_single import load_data
         return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)
+    elif dataname == 'fpv_corto':
+        from .dataloader_fpv_single import load_data
+        return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)
     elif dataname == 'taxibj':
         from .dataloader_taxibj import load_data
         return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)

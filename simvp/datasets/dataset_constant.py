@@ -11,6 +11,12 @@ dataset_parameters = {
         'aft_seq_length': 10,
         'total_length': 20
     },
+    'fpv_corto': {
+        'in_shape': [8, 3, 720, 1280],
+        'pre_seq_length': 8,
+        'aft_seq_length': 4,
+        'total_length': 12
+    },
     'taxibj': {
         'in_shape': [4, 2, 32, 32],
         'pre_seq_length': 4,
