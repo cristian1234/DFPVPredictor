@@ -12,7 +12,13 @@ dataset_parameters = {
         'total_length': 20
     },
     'fpv_corto': {
-        'in_shape': [8, 3, 720, 1280],
+        'in_shape': [10, 3, 144, 256],
+        'pre_seq_length': 10,
+        'aft_seq_length': 10,
+        'total_length': 20
+    },
+    'fpv_corto_64x64': {
+        'in_shape': [8, 3, 64, 64],
         'pre_seq_length': 8,
         'aft_seq_length': 4,
         'total_length': 12
