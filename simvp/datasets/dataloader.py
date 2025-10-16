@@ -14,10 +14,10 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, **kw
         return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)
     elif dataname == 'fpv':
         from .dataloader_fpv_single import load_data
-        return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)
+        return load_data(batch_size, val_batch_size, data_root+'fpv', num_workers, pre_seq_length, aft_seq_length)
     elif dataname == 'fpv_corto':
         from .dataloader_fpv_single import load_data
-        return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)
+        return load_data(batch_size, val_batch_size, data_root+'fpv_corto', num_workers, pre_seq_length, aft_seq_length)
     elif dataname == 'fpv_corto_64x64':
         from .dataloader_fpv_single import load_data
         return load_data(batch_size, val_batch_size, data_root, num_workers, pre_seq_length, aft_seq_length)

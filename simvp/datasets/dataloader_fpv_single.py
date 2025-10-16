@@ -24,11 +24,11 @@ class FPVSingleNPZ(Dataset):
 
 def load_data(batch_size, val_batch_size, data_root, num_workers=4,
               pre_seq_length=10, aft_seq_length=10, **kwargs):
-    train_set = FPVSingleNPZ(os.path.join(data_root, 'fpv', 'fpv_train.npz'),
+    train_set = FPVSingleNPZ(os.path.join(data_root, 'fpv_train.npz'),
                            pre_seq_length, aft_seq_length)
-    val_set = FPVSingleNPZ(os.path.join(data_root, 'fpv', 'fpv_val.npz'),
+    val_set = FPVSingleNPZ(os.path.join(data_root, 'fpv_val.npz'),
                          pre_seq_length, aft_seq_length)
-    test_set = FPVSingleNPZ(os.path.join(data_root, 'fpv', 'fpv_test.npz'),
+    test_set = FPVSingleNPZ(os.path.join(data_root, 'fpv_test.npz'),
                           pre_seq_length, aft_seq_length)
 
     train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,

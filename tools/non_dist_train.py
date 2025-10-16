@@ -6,7 +6,7 @@ warnings.filterwarnings('ignore')
 
 from simvp.api import NonDistExperiment
 from simvp.utils import create_parser, load_config, update_config
-
+#from tools import mem_monitor as mm
 try:
     import nni
     has_nni = True
@@ -16,6 +16,8 @@ except ImportError:
 
 if __name__ == '__main__':
     args = create_parser().parse_args()
+    #mm.start(period=10)
+    #mm.snapshot("start")
     config = args.__dict__
 
     if has_nni:
@@ -29,9 +31,13 @@ if __name__ == '__main__':
 
     exp = NonDistExperiment(args)
     print('>'*35 + ' training ' + '<'*35)
+    #mm.snapshot("before_train")
     exp.train()
-
+    #mm.snapshot("after_train")
     print('>'*35 + ' testing  ' + '<'*35)
+    #mm.snapshot("before_test")
     mse = exp.test()
+    #mm.snapshot("after_test")
     if has_nni:
         nni.report_final_result(mse)
+    #mm.stop()

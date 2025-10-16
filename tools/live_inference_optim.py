@@ -236,12 +236,22 @@ def main(args):
         img_bgr = draw_button(img_bgr, btn_rect_base, "PAUSE" if not play_active else "PLAY", active=play_active)
         cv2.imshow(window_name, img_bgr)
 
-    # 🧠 async setup
+    # 🧠 async setup (triple buffer)
     import concurrent.futures
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    next_future = None
-    forward_start = None
-    pending_out = None  # 🧠 NUEVO: resultado listo para el próximo bloque
+    next_future = None  # C: bloque en cómputo (Future)
+    pending_out = None  # B: bloque listo para usar (tensor en device)
+    forward_start = None  # timer del forward asíncrono
+
+    def schedule_compute_if_idle():
+        """Lanza un forward asíncrono (C) si no hay uno corriendo."""
+        nonlocal next_future, forward_start
+        if next_future is None and buf_real.ready():
+            inp = buf_real.as_tensor(device, half=args.half, channels_last=True).contiguous()
+            next_future = executor.submit(
+                forward_pred, model, inp, use_amp=args.amp, device_type=device.type
+            )
+            forward_start = time.time()
 
     while True:
         loop_start = time.time()
@@ -320,51 +330,41 @@ def main(args):
 
         # ============== MODO INFERENCIA CONTINUA (solo predicciones) ==============
         if state['infer_mode']:
-            # 🧠 1) Lanzar un forward si no hay trabajo en curso ni resultado pendiente
-            if next_future is None and pending_out is None and buf_real.ready():
-                inp = buf_real.as_tensor(device, half=args.half, channels_last=True)
-                inp = inp.contiguous()
-                next_future = executor.submit(
-                    forward_pred, model, inp, use_amp=args.amp, device_type=device.type
-                )
-                forward_start = time.time()
-
-            # 🧠 2) Si terminó el future, guardar resultado en "pending_out" (NO tocar el bloque actual aún)
+            # --- (1) Mantener siempre la tubería llena: A (mostrando) + B (ready) + C (computing) ---
+            # Si C terminó, moverlo a B (sin bloquear el render)
             if next_future is not None and next_future.done():
                 out = next_future.result()
-                forward_time = time.time() - forward_start
-                print(f"[DBG] async forward {args.pred_len} frames = {forward_time*1000:.2f} ms")
-                pending_out = out
-                next_future = None
-                proc_fps = float(args.pred_len) / max(forward_time, 1e-6)
-                ema_proc_fps = proc_fps if ema_proc_fps is None else (0.8*ema_proc_fps + 0.2*proc_fps)
+                fwd_time = time.time() - forward_start
+                print(f"[DBG] async forward {args.pred_len} frames = {fwd_time * 1000:.2f} ms")
+                pending_out = out  # B se actualiza
+                next_future = None  # C queda libre
 
-            # 🧠 3) Si no hay bloque activo, pero ya hay uno pendiente, empezalo ahora
+                # actualizar proc FPS (equivalente)
+                proc_fps = float(args.pred_len) / max(fwd_time, 1e-6)
+                ema_proc_fps = proc_fps if ema_proc_fps is None else (0.8 * ema_proc_fps + 0.2 * proc_fps)
+
+            # Si no hay C corriendo, ¡lánzalo ya! (aunque B exista → triple buffer activo)
+            schedule_compute_if_idle()
+
+            # --- (2) Si no hay A (bloque actual), y B está listo, promover B→A inmediatamente ---
             if state['pred_cache'] is None and pending_out is not None:
-                state['pred_cache'] = pending_out
+                state['pred_cache'] = pending_out  # A
                 state['pred_idx'] = 0
-                pending_out = None
-                # opcional: lanzar ya el siguiente prefetch
-                if next_future is None and buf_real.ready():
-                    inp = buf_real.as_tensor(device, half=args.half, channels_last=True).contiguous()
-                    next_future = executor.submit(
-                        forward_pred, model, inp, use_amp=args.amp, device_type=device.type
-                    )
-                    forward_start = time.time()
+                pending_out = None  # B queda vacío
 
-            # --- mostrar frame predicho actual o mantener último ---
+                # mantener C ocupado siempre (si quedó libre)
+                schedule_compute_if_idle()
+
+            # --- (3) Mostrar frame A[t] si existe; si no, mantener hold_frame (sin negro) ---
             if state['pred_cache'] is not None and state['pred_idx'] < args.pred_len:
-                # tenemos frame nuevo del bloque actual
                 pred_chw = state['pred_cache'][0, state['pred_idx']].detach().float().cpu().numpy()
                 pred_chw = np.clip(pred_chw, 0.0, 1.0)
                 pred_bgr = to_display_image(pred_chw)
-                disp = pred_bgr if args.no_upscale else cv2.resize(
-                    pred_bgr, display_size, interpolation=cv2.INTER_LINEAR
-                )
+                disp = pred_bgr if args.no_upscale else cv2.resize(pred_bgr, display_size, interpolation=cv2.INTER_LINEAR)
 
-                # 🟥 marcar el primer frame del bloque (una sola vez por bloque)
+                # 🟥 marcar el primer frame del bloque (una vez por bloque)
                 if state['pred_idx'] == 0:
-                    disp = np.ascontiguousarray(disp, dtype=np.uint8)  # ✅ asegura compatibilidad OpenCV
+                    disp = np.ascontiguousarray(disp, dtype=np.uint8)
                     h, w = disp.shape[:2]
                     cv2.rectangle(disp, (3, 3), (w - 4, h - 4), (0, 0, 255), 4)
                     cv2.putText(disp, "BLOCK START", (10, 40),
@@ -373,56 +373,56 @@ def main(args):
                 state['hold_frame'] = disp.copy()
                 state['pred_idx'] += 1
             else:
-                # no hay bloque listo aún → mostrar último frame guardado (sin negro)
+                # Aún no hay pred listo → mantener último mostrado
                 disp = state['hold_frame'].copy()
 
-            # --- dibujar HUD siempre ---
+            # --- HUD y display ---
             hud = f"AUTO PRED | {device.type.upper()} | in:{target_w}x{target_h}"
             if ema_live_fps is not None: hud += f" | LIVE FPS:{ema_live_fps:.1f}"
             if ema_proc_fps is not None: hud += f" | PROC FPS:{ema_proc_fps:.1f}"
             show_frame(disp, hud, play_active=False)
 
-            # 4) avanzar 1 frame real para refrescar ventana de entrada
+            # --- (4) Avanzar 1 real y mantener ventana (para que C y el próximo B usen real reciente) ---
             ok, frame = cap.read()
             if not ok: break
             t_in = to_model_tensor_torch(frame, (target_h, target_w), use_rgb=True, half=args.half)
             buf_real.append(t_in)
             state['reals_since_last_pred'] += 1
 
-            # 5) al cumplir el stride de reales, cambiamos de bloque:
-            #    - si ya tenemos pending_out, lo activamos
-            #    - si no, invalidamos el actual y esperamos a que llegue
+            # --- (5) Fin de bloque A: switchear a B si existe; si no, A=None y esperamos a que llegue ---
             if state['reals_since_last_pred'] >= block_stride:
                 state['reals_since_last_pred'] = 0
+
                 if pending_out is not None:
+                    # B listo → activar inmediatamente como A
                     state['pred_cache'] = pending_out
                     state['pred_idx'] = 0
                     pending_out = None
                 else:
-                    state['pred_cache'] = None  # esperamos a que termine el próximo
+                    # B no está → invalidar A y esperar próximo ready (mantendremos hold_frame)
+                    state['pred_cache'] = None
+                    state['pred_idx'] = 0
 
-                # opcional: si no hay un future en curso ni pending, lanzarlo ahora
-                if next_future is None and pending_out is None and buf_real.ready():
-                    inp = buf_real.as_tensor(device, half=args.half, channels_last=True).contiguous()
-                    next_future = executor.submit(
-                        forward_pred, model, inp, use_amp=args.amp, device_type=device.type
-                    )
-                    forward_start = time.time()
+                # En cualquiera de los casos, asegurar que C vuelva a arrancar si quedó libre
+                schedule_compute_if_idle()
 
-            # teclado
+            # --- teclado ---
             k = cv2.waitKey(1) & 0xFF
             if k == ord('q'): break
-            elif k == ord('p'): state['paused'] = True
+            elif k == ord('p'):
+                state['paused'] = True
             elif k == ord('i'):
                 state['infer_mode'] = False
-                state['pred_cache'] = None; state['pred_idx'] = 0; state['reals_since_last_pred'] = 0
-                next_future = None
+                state['pred_cache'] = None;
+                state['pred_idx'] = 0;
+                state['reals_since_last_pred'] = 0
+                next_future = None;
                 pending_out = None
 
-            # FPS loop
+            # --- medir FPS loop (LIVE FPS del lazo) ---
             dt_live = loop_start - last_loop_t
             live_fps = 1.0 / max(dt_live, 1e-6)
-            ema_live_fps = live_fps if ema_live_fps is None else (0.9*ema_live_fps + 0.1*live_fps)
+            ema_live_fps = live_fps if ema_live_fps is None else (0.9 * ema_live_fps + 0.1 * live_fps)
             last_loop_t = loop_start
             continue
 
@@ -450,7 +450,7 @@ if __name__ == "__main__":
 
     # visualización y control
     p.add_argument("--fps", type=int, default=0, help="cap de FPS del loop (0 = usar fps de fuente)")
-    p.add_argument("--display_scale", type=int, default=1)
+    p.add_argument("--display_scale", type=float, default=1)
     p.add_argument("--hud", type=int, default=1)
     p.add_argument("--no_upscale", type=int, default=0, help="mostrar a resolución interna")
 
