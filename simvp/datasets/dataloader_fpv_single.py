@@ -35,7 +35,7 @@ def load_data(batch_size, val_batch_size, data_root, num_workers=4,
                               num_workers=num_workers, drop_last=True)
     val_loader = DataLoader(val_set, batch_size=val_batch_size, shuffle=False,
                             num_workers=num_workers, drop_last=True)
-    test_loader = DataLoader(test_set, batch_size=1, shuffle=False,
+    test_loader = DataLoader(test_set, batch_size=val_batch_size, shuffle=False,
                              num_workers=num_workers, drop_last=False)
 
     return train_loader, val_loader, test_loader

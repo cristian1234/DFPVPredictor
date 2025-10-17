@@ -47,12 +47,12 @@ balance_by_scene = True
 # =================================
 
 
-def time_to_seconds(t: str) -> float:
+def time_to_seconds(t: str) -> int:
     t = t.strip()
     if ":" not in t:
-        return float(t)
+        return int(t)
     mm, ss = t.split(":")
-    return int(mm) * 60 + float(ss)
+    return int(mm) * 60 + int(ss)
 
 def load_video_frames(video_path, frame_size, use_color):
     cap = cv2.VideoCapture(video_path)
@@ -90,8 +90,8 @@ def clamp_ranges_to_video(ranges, nf):
 def mask_from_bad_seconds(nf, fps, bad_seconds):
     mask = np.ones(nf, dtype=bool)
     for start, end in bad_seconds:
-        i0 = int(math.floor(time_to_seconds(start) * fps))
-        i1 = int(math.ceil (time_to_seconds(end)   * fps))
+        i0 = math.floor(time_to_seconds(start) * fps)
+        i1 = math.ceil (time_to_seconds(end)   * fps)
         i0 = max(0, min(nf, i0))
         i1 = max(0, min(nf, i1))
         if i1 > i0:

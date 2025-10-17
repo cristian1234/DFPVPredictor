@@ -20,12 +20,3 @@ lr = 1e-3
 batch_size = 16
 drop_path = 0
 sched = 'onecycle'  # puede quedar igual
-
-# --- TEMPORAL SETTINGS (lo importante para vos) ---
-T_in = 10
-T_out = 10
-# total sequence length (si el código usa seq_len = T_in + T_out)
-seq_len = T_in + T_out
-
-# --- AMP y demás (si tu script lo soporta) ---
-amp = True
