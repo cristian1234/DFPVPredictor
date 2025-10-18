@@ -25,9 +25,9 @@ def create_parser():
     parser.add_argument('--test', action='store_true', default=False, help='Only performs testing')
 
     # dataset parameters
-    parser.add_argument('--batch_size', '-b', default=16, type=int, help='Training batch size')
-    parser.add_argument('--val_batch_size', '-vb', default=4, type=int, help='Validation batch size')
-    parser.add_argument('--num_workers', default=4, type=int)
+    parser.add_argument('--batch_size', '-b', default=1, type=int, help='Training batch size')
+    parser.add_argument('--val_batch_size', '-vb', default=1, type=int, help='Validation batch size')
+    parser.add_argument('--num_workers', default=2, type=int)
     parser.add_argument('--data_root', default='./data/')
     parser.add_argument('--dataname', '-d', default='mmnist', type=str,
                         help='Dataset name (default: "mmnist")')
